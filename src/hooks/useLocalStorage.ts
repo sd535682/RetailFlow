@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from 'react';
 
 // Custom hook for localStorage synchronization with React state
 export function useLocalStorage<T>(key: string, initialValue: T) {
@@ -17,8 +17,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   const setValue = (value: T | ((val: T) => T)) => {
     try {
       // Allow value to be a function so we have the same API as useState
-      const valueToStore =
-        value instanceof Function ? value(storedValue) : value;
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
       setStoredValue(valueToStore);
       window.localStorage.setItem(key, JSON.stringify(valueToStore));
     } catch (error) {
@@ -33,11 +32,11 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
 export function useStorageError() {
   const [error, setError] = useState<string | null>(null);
 
-  const handleError = (operation: string, key: string, error: Error) => {
+  const handleError = (operation: string, key: string, error: any) => {
     const errorMessage = `Storage ${operation} failed for key "${key}": ${error.message}`;
     setError(errorMessage);
     console.error(errorMessage, error);
-
+    
     // Auto-clear error after 5 seconds
     setTimeout(() => setError(null), 5000);
   };

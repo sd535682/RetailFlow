@@ -1,5 +1,5 @@
-import { Component, ErrorInfo, ReactNode } from "react";
-import { AlertTriangle } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -8,6 +8,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  errorInfo?: ErrorInfo;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -20,8 +21,13 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
+    console.error('Uncaught error:', error, errorInfo);
+    this.setState({ errorInfo });
   }
+
+  private handleRetry = () => {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+  };
 
   public render() {
     if (this.state.hasError) {
@@ -35,15 +41,33 @@ export class ErrorBoundary extends Component<Props, State> {
               Something went wrong
             </h1>
             <p className="text-gray-600 mb-6">
-              We're sorry, but something unexpected happened. Please try
-              refreshing the page.
+              We're sorry, but something unexpected happened. This could be due to a network issue or a temporary server problem.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Refresh Page
-            </button>
+            
+            {process.env.NODE_ENV === 'development' && this.state.error && (
+              <div className="mb-6 p-4 bg-gray-100 rounded-lg text-left">
+                <h3 className="font-medium text-gray-900 mb-2">Error Details:</h3>
+                <p className="text-sm text-gray-700 font-mono">
+                  {this.state.error.message}
+                </p>
+              </div>
+            )}
+            
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={this.handleRetry}
+                className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-gray-600 text-white px-6 py-2 rounded-md hover:bg-gray-700 transition-colors"
+              >
+                Refresh Page
+              </button>
+            </div>
           </div>
         </div>
       );

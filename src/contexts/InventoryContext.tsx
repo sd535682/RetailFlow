@@ -1,28 +1,15 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  ReactNode,
-} from "react";
-import { Product, Supplier, Transaction, InventoryContextType } from "../types";
-import {
-  productStorage,
-  supplierStorage,
-  transactionStorage,
-  initializeSampleData,
-} from "../utils/localStorage";
-import { generateId } from "../utils/helpers";
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { Product, Supplier, Transaction, InventoryContextType } from '../types';
+import { productService } from '../services/productService';
+import { supplierService } from '../services/supplierService';
+import { transactionService } from '../services/transactionService';
 
-const InventoryContext = createContext<InventoryContextType | undefined>(
-  undefined
-);
+const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
 export function useInventory() {
   const context = useContext(InventoryContext);
   if (context === undefined) {
-    throw new Error("useInventory must be used within an InventoryProvider");
+    throw new Error('useInventory must be used within an InventoryProvider');
   }
   return context;
 }
@@ -38,154 +25,160 @@ export function InventoryProvider({ children }: InventoryProviderProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Transform backend data to frontend format
+  const transformProduct = (product: any): Product => ({
+    ...product,
+    id: product._id || product.id,
+    lastUpdated: product.updatedAt || product.lastUpdated,
+  });
+
+  const transformSupplier = (supplier: any): Supplier => ({
+    ...supplier,
+    id: supplier._id || supplier.id,
+    createdAt: supplier.createdAt || new Date().toISOString(),
+    address: typeof supplier.address === 'object' 
+      ? supplier.fullAddress || `${supplier.address.street}, ${supplier.address.city}, ${supplier.address.country}`
+      : supplier.address,
+  });
+
+  const transformTransaction = (transaction: any): Transaction => ({
+    ...transaction,
+    id: transaction._id || transaction.id,
+    date: transaction.createdAt || transaction.date,
+  });
+
+  // Load initial data
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [productsRes, suppliersRes, transactionsRes] = await Promise.all([
+        productService.getProducts({ limit: 1000 }), // Get all products
+        supplierService.getSuppliers({ limit: 1000 }), // Get all suppliers
+        transactionService.getTransactions({ limit: 1000 }) // Get all transactions
+      ]);
+
+      setProducts(productsRes.data.map(transformProduct));
+      setSuppliers(suppliersRes.data.map(transformSupplier));
+      setTransactions(transactionsRes.data.map(transformTransaction));
+    } catch (err) {
+      console.error('Failed to load data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Initialize data on mount
   useEffect(() => {
-    try {
-      initializeSampleData();
-      setProducts(productStorage.getAll());
-      setSuppliers(supplierStorage.getAll());
-      setTransactions(transactionStorage.getAll());
-      setLoading(false);
-    } catch (err) {
-      setError("Failed to load inventory data");
-      setLoading(false);
-    }
+    loadData();
   }, []);
 
+  // Refresh data function
+  const refreshData = async () => {
+    await loadData();
+  };
+
   // Product operations
-  const addProduct = (productData: Omit<Product, "id" | "lastUpdated">) => {
+  const addProduct = async (productData: Omit<Product, 'id' | 'lastUpdated'>) => {
     try {
-      const newProduct: Product = {
-        ...productData,
-        id: generateId("prod"),
-        lastUpdated: new Date().toISOString(),
-      };
-
-      const updatedProducts = [...products, newProduct];
-      setProducts(updatedProducts);
-      productStorage.save(updatedProducts);
+      setError(null);
+      const response = await productService.createProduct(productData);
+      const newProduct = transformProduct(response.data);
+      setProducts(prev => [...prev, newProduct]);
     } catch (err) {
-      setError("Failed to add product");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add product';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
-  const updateProduct = (id: string, productData: Partial<Product>) => {
+  const updateProduct = async (id: string, productData: Partial<Product>) => {
     try {
-      const updatedProducts = products.map((product) =>
-        product.id === id
-          ? {
-              ...product,
-              ...productData,
-              lastUpdated: new Date().toISOString(),
-            }
-          : product
-      );
-
-      setProducts(updatedProducts);
-      productStorage.save(updatedProducts);
+      setError(null);
+      const response = await productService.updateProduct(id, productData);
+      const updatedProduct = transformProduct(response.data);
+      setProducts(prev => prev.map(product => 
+        product.id === id ? updatedProduct : product
+      ));
     } catch (err) {
-      setError("Failed to update product");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update product';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string) => {
     try {
-      const updatedProducts = products.filter((product) => product.id !== id);
-      setProducts(updatedProducts);
-      productStorage.save(updatedProducts);
-
+      setError(null);
+      await productService.deleteProduct(id);
+      setProducts(prev => prev.filter(product => product.id !== id));
       // Also remove related transactions
-      const updatedTransactions = transactions.filter(
-        (transaction) => transaction.productId !== id
-      );
-      setTransactions(updatedTransactions);
-      transactionStorage.save(updatedTransactions);
+      setTransactions(prev => prev.filter(transaction => transaction.productId !== id));
     } catch (err) {
-      setError("Failed to delete product");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete product';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
   // Supplier operations
-  const addSupplier = (supplierData: Omit<Supplier, "id" | "createdAt">) => {
+  const addSupplier = async (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => {
     try {
-      const newSupplier: Supplier = {
-        ...supplierData,
-        id: generateId("sup"),
-        createdAt: new Date().toISOString(),
-      };
-
-      const updatedSuppliers = [...suppliers, newSupplier];
-      setSuppliers(updatedSuppliers);
-      supplierStorage.save(updatedSuppliers);
+      setError(null);
+      const response = await supplierService.createSupplier(supplierData);
+      const newSupplier = transformSupplier(response.data);
+      setSuppliers(prev => [...prev, newSupplier]);
     } catch (err) {
-      setError("Failed to add supplier");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add supplier';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
-  const updateSupplier = (id: string, supplierData: Partial<Supplier>) => {
+  const updateSupplier = async (id: string, supplierData: Partial<Supplier>) => {
     try {
-      const updatedSuppliers = suppliers.map((supplier) =>
-        supplier.id === id ? { ...supplier, ...supplierData } : supplier
-      );
-
-      setSuppliers(updatedSuppliers);
-      supplierStorage.save(updatedSuppliers);
+      setError(null);
+      const response = await supplierService.updateSupplier(id, supplierData);
+      const updatedSupplier = transformSupplier(response.data);
+      setSuppliers(prev => prev.map(supplier => 
+        supplier.id === id ? updatedSupplier : supplier
+      ));
     } catch (err) {
-      setError("Failed to update supplier");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update supplier';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
-  const deleteSupplier = (id: string) => {
+  const deleteSupplier = async (id: string) => {
     try {
-      // Check if supplier has associated products
-      const hasProducts = products.some((product) => product.supplierId === id);
-      if (hasProducts) {
-        setError("Cannot delete supplier with associated products");
-        return;
-      }
-
-      const updatedSuppliers = suppliers.filter(
-        (supplier) => supplier.id !== id
-      );
-      setSuppliers(updatedSuppliers);
-      supplierStorage.save(updatedSuppliers);
+      setError(null);
+      await supplierService.deleteSupplier(id);
+      setSuppliers(prev => prev.filter(supplier => supplier.id !== id));
     } catch (err) {
-      setError("Failed to delete supplier");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete supplier';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
   // Transaction operations
-  const addTransaction = (transactionData: Omit<Transaction, "id">) => {
+  const addTransaction = async (transactionData: Omit<Transaction, 'id' | 'date'>) => {
     try {
-      const newTransaction: Transaction = {
-        ...transactionData,
-        id: generateId("txn"),
-      };
-
-      // Update product quantity based on transaction type
-      const updatedProducts = products.map((product) => {
-        if (product.id === transactionData.productId) {
-          const quantityChange =
-            transactionData.type === "PURCHASE"
-              ? transactionData.quantity
-              : -transactionData.quantity;
-          return {
-            ...product,
-            quantity: Math.max(0, product.quantity + quantityChange),
-            lastUpdated: new Date().toISOString(),
-          };
-        }
-        return product;
-      });
-
-      const updatedTransactions = [...transactions, newTransaction];
-
-      setProducts(updatedProducts);
-      setTransactions(updatedTransactions);
-      productStorage.save(updatedProducts);
-      transactionStorage.save(updatedTransactions);
+      setError(null);
+      const response = await transactionService.createTransaction(transactionData);
+      const newTransaction = transformTransaction(response.data);
+      setTransactions(prev => [...prev, newTransaction]);
+      
+      // Refresh products to get updated quantities
+      const productsRes = await productService.getProducts({ limit: 1000 });
+      setProducts(productsRes.data.map(transformProduct));
     } catch (err) {
-      setError("Failed to add transaction");
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add transaction';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   };
 
@@ -202,6 +195,7 @@ export function InventoryProvider({ children }: InventoryProviderProps) {
     addTransaction,
     loading,
     error,
+    refreshData,
   };
 
   return (
